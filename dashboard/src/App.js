@@ -24,6 +24,14 @@ function App() {
         fetch(`${API_BASE_URL}/api/events?limit=50`)
       ]);
 
+      // Check if responses are successful before parsing JSON
+      if (!statsRes.ok) {
+        throw new Error(`Stats API error: ${statsRes.status} ${statsRes.statusText}`);
+      }
+      if (!eventsRes.ok) {
+        throw new Error(`Events API error: ${eventsRes.status} ${eventsRes.statusText}`);
+      }
+
       const statsData = await statsRes.json();
       const eventsData = await eventsRes.json();
 

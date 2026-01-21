@@ -12,6 +12,13 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import com.google.gson.Gson
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
+// Helper data class for synchronized data extraction
+private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
 /**
  * Main Security Monitor SDK
@@ -32,10 +39,14 @@ object SecurityMonitor {
     private val gson = Gson()
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     
-    private var networkBytesSent: Long = 0
-    private var networkBytesReceived: Long = 0
-    private var apiCallsCount: Int = 0
-    private var fileAccessCount: Int = 0
+    // Thread-safe counters using atomic operations
+    private val networkBytesSent = AtomicLong(0)
+    private val networkBytesReceived = AtomicLong(0)
+    private val apiCallsCount = AtomicInteger(0)
+    private val fileAccessCount = AtomicInteger(0)
+    
+    // Synchronized access for boolean flags and set
+    private val dataMutex = Mutex()
     private var locationAccess: Boolean = false
     private var contactsAccess: Boolean = false
     private var cameraAccess: Boolean = false
@@ -87,12 +98,16 @@ object SecurityMonitor {
      * Track network activity
      */
     fun trackNetworkActivity(bytesSent: Long, bytesReceived: Long, endpoint: String) {
-        networkBytesSent += bytesSent
-        networkBytesReceived += bytesReceived
+        networkBytesSent.addAndGet(bytesSent)
+        networkBytesReceived.addAndGet(bytesReceived)
         
-        // Check for unknown endpoints
+        // Check for unknown endpoints (thread-safe)
         if (!isKnownEndpoint(endpoint)) {
-            unknownEndpoints.add(endpoint)
+            runBlocking {
+                dataMutex.withLock {
+                    unknownEndpoints.add(endpoint)
+                }
+            }
         }
     }
     
@@ -100,7 +115,7 @@ object SecurityMonitor {
      * Track API call
      */
     fun trackAPICall(endpoint: String, method: String) {
-        apiCallsCount++
+        apiCallsCount.incrementAndGet()
         trackNetworkActivity(100, 200, endpoint) // Estimate
     }
     
@@ -108,23 +123,27 @@ object SecurityMonitor {
      * Track file access
      */
     fun trackFileAccess(path: String) {
-        fileAccessCount++
+        fileAccessCount.incrementAndGet()
     }
     
     /**
      * Track permission usage
      */
     fun trackPermission(permission: String, granted: Boolean) {
-        when (permission) {
-            android.Manifest.permission.ACCESS_FINE_LOCATION,
-            android.Manifest.permission.ACCESS_COARSE_LOCATION -> {
-                locationAccess = granted
-            }
-            android.Manifest.permission.READ_CONTACTS -> {
-                contactsAccess = granted
-            }
-            android.Manifest.permission.CAMERA -> {
-                cameraAccess = granted
+        runBlocking {
+            dataMutex.withLock {
+                when (permission) {
+                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION -> {
+                        locationAccess = granted
+                    }
+                    android.Manifest.permission.READ_CONTACTS -> {
+                        contactsAccess = granted
+                    }
+                    android.Manifest.permission.CAMERA -> {
+                        cameraAccess = granted
+                    }
+                }
             }
         }
     }
@@ -135,18 +154,34 @@ object SecurityMonitor {
     private suspend fun collectSecurityData() {
         val ctx = context ?: return
         
+        // Read all values atomically
+        val bytesSent = networkBytesSent.get()
+        val bytesReceived = networkBytesReceived.get()
+        val apiCalls = apiCallsCount.get()
+        val fileAccess = fileAccessCount.get()
+        
+        // Read synchronized data
+        val syncData = dataMutex.withLock {
+            Quadruple(
+                locationAccess,
+                contactsAccess,
+                cameraAccess,
+                unknownEndpoints.toList()
+            )
+        }
+        
         val eventData = SecurityEventData(
-            network_bytes_sent = networkBytesSent,
-            network_bytes_received = networkBytesReceived,
-            api_calls_count = apiCallsCount,
-            file_access_count = fileAccessCount,
-            location_access = if (locationAccess) 1 else 0,
-            location_consent = checkLocationConsent(ctx),
-            contacts_access = if (contactsAccess) 1 else 0,
-            contacts_consent = checkContactsConsent(ctx),
-            camera_access = if (cameraAccess) 1 else 0,
-            unknown_endpoints = unknownEndpoints.toList(),
-            suspicious_patterns = detectSuspiciousPatterns()
+            network_bytes_sent = bytesSent,
+            network_bytes_received = bytesReceived,
+            api_calls_count = apiCalls,
+            file_access_count = fileAccess,
+            location_access = if (syncData.first) 1 else 0,
+            location_consent = checkLocationConsent(ctx, syncData.first),
+            contacts_access = if (syncData.second) 1 else 0,
+            contacts_consent = checkContactsConsent(ctx, syncData.second),
+            camera_access = if (syncData.third) 1 else 0,
+            unknown_endpoints = syncData.fourth,
+            suspicious_patterns = detectSuspiciousPatterns(bytesSent, apiCalls, syncData.fourth.size)
         )
         
         val event = SecurityEvent(
@@ -183,12 +218,19 @@ object SecurityMonitor {
             
             if (response.isSuccessful) {
                 val responseBody = response.body?.string()
-                val analysis = gson.fromJson(responseBody, SecurityAnalysis::class.java)
-                
-                // Trigger callback if threat detected
-                if (analysis.anomaly_detected || analysis.risk_score > 70) {
-                    withContext(Dispatchers.Main) {
-                        onThreatDetected?.invoke(event.copy(analysis = analysis))
+                if (responseBody != null && responseBody.isNotBlank()) {
+                    try {
+                        val analysis = gson.fromJson(responseBody, SecurityAnalysis::class.java)
+                        
+                        // Trigger callback if threat detected
+                        if (analysis.anomaly_detected || analysis.risk_score > 70) {
+                            withContext(Dispatchers.Main) {
+                                onThreatDetected?.invoke(event.copy(analysis = analysis))
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // Handle JSON parsing error
+                        e.printStackTrace()
                     }
                 }
             }
@@ -214,35 +256,43 @@ object SecurityMonitor {
     /**
      * Detect suspicious patterns
      */
-    private fun detectSuspiciousPatterns(): Int {
+    private fun detectSuspiciousPatterns(bytesSent: Long, apiCalls: Int, unknownEndpointsCount: Int): Int {
         var suspicious = 0
         
         // High network usage
-        if (networkBytesSent > 1000000) suspicious++
+        if (bytesSent > 1000000) suspicious++
         
         // Many unknown endpoints
-        if (unknownEndpoints.size > 5) suspicious++
+        if (unknownEndpointsCount > 5) suspicious++
         
         // High API call rate
-        if (apiCallsCount > 100) suspicious++
+        if (apiCalls > 100) suspicious++
         
         return suspicious
     }
     
     /**
-     * Check location consent (simplified)
+     * Check location consent
+     * Returns true only if location permission is granted AND user has given consent
      */
-    private fun checkLocationConsent(context: Context): Boolean {
-        // In real implementation, check shared preferences or consent manager
-        return true // Placeholder
+    private fun checkLocationConsent(context: Context, hasPermission: Boolean): Boolean {
+        if (!hasPermission) return false
+        
+        // Check SharedPreferences for user consent
+        val prefs = context.getSharedPreferences("security_monitor_consent", Context.MODE_PRIVATE)
+        return prefs.getBoolean("location_consent_given", false)
     }
     
     /**
-     * Check contacts consent (simplified)
+     * Check contacts consent
+     * Returns true only if contacts permission is granted AND user has given consent
      */
-    private fun checkContactsConsent(context: Context): Boolean {
-        // In real implementation, check shared preferences or consent manager
-        return true // Placeholder
+    private fun checkContactsConsent(context: Context, hasPermission: Boolean): Boolean {
+        if (!hasPermission) return false
+        
+        // Check SharedPreferences for user consent
+        val prefs = context.getSharedPreferences("security_monitor_consent", Context.MODE_PRIVATE)
+        return prefs.getBoolean("contacts_consent_given", false)
     }
     
     /**
@@ -274,15 +324,18 @@ object SecurityMonitor {
     /**
      * Reset counters for next interval
      */
-    private fun resetCounters() {
-        networkBytesSent = 0
-        networkBytesReceived = 0
-        apiCallsCount = 0
-        fileAccessCount = 0
-        locationAccess = false
-        contactsAccess = false
-        cameraAccess = false
-        unknownEndpoints.clear()
+    private suspend fun resetCounters() {
+        networkBytesSent.set(0)
+        networkBytesReceived.set(0)
+        apiCallsCount.set(0)
+        fileAccessCount.set(0)
+        
+        dataMutex.withLock {
+            locationAccess = false
+            contactsAccess = false
+            cameraAccess = false
+            unknownEndpoints.clear()
+        }
     }
 }
 
