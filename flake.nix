@@ -41,7 +41,7 @@
               $out/share/java-dependency-analyzer/
             
             # Create wrapper script
-            makeWrapper ${pkgs.jdk11}/bin/java $out/bin/java-dependency-analyzer \
+            makeWrapper ${pkgs.jdk17}/bin/java $out/bin/java-dependency-analyzer \
               --add-flags "-jar $out/share/java-dependency-analyzer/java-dependency-analyzer-1.0-SNAPSHOT-jar-with-dependencies.jar"
           '';
 
@@ -70,7 +70,7 @@
 
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
-            jdk11
+            jdk17
             maven
           ];
 

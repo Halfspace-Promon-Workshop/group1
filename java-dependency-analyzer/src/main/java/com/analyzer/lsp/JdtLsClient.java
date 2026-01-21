@@ -8,6 +8,9 @@ import org.eclipse.lsp4j.services.LanguageServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -15,7 +18,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -145,22 +151,63 @@ public class JdtLsClient {
 
         initParams.setCapabilities(capabilities);
 
+        // Configure JDT LS settings to handle large projects better
+        Map<String, Object> settings = new HashMap<>();
+        Map<String, Object> javaSettings = new HashMap<>();
+        
+        // Exclude target directories and generated sources from import to avoid nesting issues
+        List<String> exclusions = Arrays.asList(
+            "**/target/**",
+            "**/.*",
+            "**/.metadata/**"
+        );
+        javaSettings.put("import.exclusions", exclusions);
+        
+        // Configure import settings
+        Map<String, Object> importSettings = new HashMap<>();
+        importSettings.put("maven.enabled", true);
+        importSettings.put("gradle.enabled", false);
+        javaSettings.put("import", importSettings);
+        
+        // Configure project settings
+        Map<String, Object> projectSettings = new HashMap<>();
+        projectSettings.put("referencedLibraries", new ArrayList<>());
+        javaSettings.put("project", projectSettings);
+        
+        settings.put("java", javaSettings);
+        
+        // Convert to JSON object for initialization options
+        Gson gson = new Gson();
+        JsonObject initOptions = gson.toJsonTree(settings).getAsJsonObject();
+        initParams.setInitializationOptions(initOptions);
+
         // Send initialize request
         CompletableFuture<InitializeResult> initFuture = languageServer.initialize(initParams);
-        InitializeResult initResult = initFuture.get(60, TimeUnit.SECONDS); // Increased timeout for first init
-
-        logger.info("JDT LS initialized successfully");
-        logger.info("Server capabilities: workspace={}, textDocument={}", 
-                   initResult.getCapabilities().getWorkspaceSymbolProvider() != null,
-                   initResult.getCapabilities().getDocumentSymbolProvider() != null);
+        InitializeResult initResult;
+        
+        try {
+            initResult = initFuture.get(90, TimeUnit.SECONDS); // Increased timeout for large projects
+            logger.info("JDT LS initialized successfully");
+            logger.info("Server capabilities: workspace={}, textDocument={}", 
+                       initResult.getCapabilities().getWorkspaceSymbolProvider() != null,
+                       initResult.getCapabilities().getDocumentSymbolProvider() != null);
+        } catch (TimeoutException e) {
+            logger.error("JDT LS initialization timed out after 90 seconds");
+            throw e;
+        } catch (ExecutionException e) {
+            logger.error("JDT LS initialization failed", e);
+            throw e;
+        }
 
         // Send initialized notification
         languageServer.initialized(new InitializedParams());
         initialized = true;
         
         // Give jdtls some time to analyze the workspace
+        // Import errors for some modules are non-fatal - JDT LS will continue with successfully imported modules
         logger.info("Waiting for JDT LS to analyze workspace...");
-        Thread.sleep(5000); // Wait 5 seconds for initial analysis
+        logger.info("Note: Some Maven modules may fail to import due to configuration issues, but this is usually non-fatal");
+        Thread.sleep(10000); // Wait 10 seconds for initial analysis of large projects
     }
 
     /**
