@@ -19,7 +19,7 @@
 
           nativeBuildInputs = with pkgs; [
             maven
-            jdk11
+            jdk17
             makeWrapper
           ];
 

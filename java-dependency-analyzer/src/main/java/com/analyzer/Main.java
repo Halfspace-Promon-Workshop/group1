@@ -12,8 +12,6 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeoutException;
 
 /**
  * Main application entry point.
@@ -22,8 +20,8 @@ import java.util.concurrent.TimeoutException;
 public class Main {
     private static final Logger logger = LoggerFactory.getLogger(Main.class);
 
-    private static final String DEFAULT_JDTLS_HOST = "localhost";
-    private static final int DEFAULT_JDTLS_PORT = 9999;
+    private static final String DEFAULT_WORKSPACE_PATH = ".";
+    private static final String DEFAULT_JDTLS_COMMAND = "jdtls";
     private static final int DEFAULT_SERVER_PORT = 8080;
 
     public static void main(String[] args) {
@@ -34,32 +32,31 @@ public class Main {
             Properties config = loadConfiguration();
 
             // Parse command line arguments or use defaults
-            String jdtlsHost = getConfigValue(config, args, "jdtls.host", 0, DEFAULT_JDTLS_HOST);
-            int jdtlsPort = Integer.parseInt(getConfigValue(config, args, "jdtls.port", 1, 
-                    String.valueOf(DEFAULT_JDTLS_PORT)));
+            String workspacePath = getConfigValue(config, args, "jdtls.workspace", 0, DEFAULT_WORKSPACE_PATH);
+            String jdtlsCommand = getConfigValue(config, args, "jdtls.command", 1, DEFAULT_JDTLS_COMMAND);
             int serverPort = Integer.parseInt(getConfigValue(config, args, "server.port", 2, 
                     String.valueOf(DEFAULT_SERVER_PORT)));
 
             logger.info("Configuration:");
-            logger.info("  JDT LS: {}:{}", jdtlsHost, jdtlsPort);
+            logger.info("  Workspace: {}", workspacePath);
+            logger.info("  JDT LS command: {}", jdtlsCommand);
             logger.info("  Server port: {}", serverPort);
 
             // Connect to JDT LS
-            JdtLsClient lsClient = new JdtLsClient(jdtlsHost, jdtlsPort);
-            logger.info("Connecting to JDT Language Server...");
+            JdtLsClient lsClient = new JdtLsClient(workspacePath, jdtlsCommand);
+            logger.info("Starting JDT Language Server...");
 
             try {
                 lsClient.connect();
-                logger.info("Successfully connected to JDT LS");
+                logger.info("Successfully started JDT LS");
             } catch (IOException e) {
-                logger.error("Failed to connect to JDT LS at {}:{}. Make sure JDT LS is running.", 
-                        jdtlsHost, jdtlsPort);
+                logger.error("Failed to start JDT LS for workspace: {}", workspacePath);
                 logger.error("Error: {}", e.getMessage());
-                logger.info("\nTo start JDT LS, run:");
-                logger.info("  java -jar plugins/org.eclipse.equinox.launcher_*.jar \\");
-                logger.info("    -configuration config_linux \\");
-                logger.info("    -data /path/to/workspace \\");
-                logger.info("    -Dclient.socket.port={}", jdtlsPort);
+                logger.info("\nMake sure:");
+                logger.info("  1. jdtls is installed (e.g., via Nix: nix-env -iA nixpkgs.jdt-language-server)");
+                logger.info("  2. The workspace path points to a valid Java project: {}", workspacePath);
+                logger.info("\nUsage: java -jar analyzer.jar [workspace-path] [jdtls-command] [server-port]");
+                logger.info("Example: java -jar analyzer.jar /path/to/nifi jdtls 8080");
                 System.exit(1);
             } catch (Exception e) {
                 logger.error("Error initializing JDT LS connection", e);

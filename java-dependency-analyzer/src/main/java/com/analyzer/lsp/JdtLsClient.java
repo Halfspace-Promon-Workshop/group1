@@ -11,7 +11,9 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.Socket;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -20,33 +22,75 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * Client for connecting to JDT Language Server via socket.
+ * Client for connecting to JDT Language Server via stdio.
  */
 public class JdtLsClient {
     private static final Logger logger = LoggerFactory.getLogger(JdtLsClient.class);
 
-    private final String host;
-    private final int port;
-    private Socket socket;
+    private final String workspacePath;
+    private final String jdtlsCommand;
+    private Process jdtlsProcess;
     private LanguageServer languageServer;
     private LanguageClientImpl languageClient;
     private boolean initialized = false;
 
-    public JdtLsClient(String host, int port) {
-        this.host = host;
-        this.port = port;
+    /**
+     * Create a new JDT LS client.
+     * 
+     * @param workspacePath Path to the Java project workspace
+     * @param jdtlsCommand Command to launch jdtls (e.g., "jdtls" or full path)
+     */
+    public JdtLsClient(String workspacePath, String jdtlsCommand) {
+        this.workspacePath = workspacePath;
+        this.jdtlsCommand = jdtlsCommand;
     }
 
     /**
-     * Connect to JDT LS via socket and initialize.
+     * Create a new JDT LS client with default jdtls command.
+     * 
+     * @param workspacePath Path to the Java project workspace
+     */
+    public JdtLsClient(String workspacePath) {
+        this(workspacePath, "jdtls");
+    }
+
+    /**
+     * Start JDT LS as a subprocess and initialize via stdio.
      */
     public void connect() throws IOException, ExecutionException, InterruptedException, TimeoutException {
-        logger.info("Connecting to JDT LS at {}:{}", host, port);
+        logger.info("Starting JDT LS for workspace: {}", workspacePath);
 
-        // Connect to socket
-        socket = new Socket(host, port);
-        InputStream input = socket.getInputStream();
-        OutputStream output = socket.getOutputStream();
+        // Validate workspace path
+        Path workspace = Paths.get(workspacePath);
+        if (!Files.exists(workspace)) {
+            throw new IOException("Workspace path does not exist: " + workspacePath);
+        }
+        if (!Files.isDirectory(workspace)) {
+            throw new IOException("Workspace path is not a directory: " + workspacePath);
+        }
+
+        // Build jdtls command
+        List<String> command = new ArrayList<>();
+        command.add(jdtlsCommand);
+        command.add("-data");
+        command.add(workspacePath);
+
+        logger.info("Launching JDT LS: {}", String.join(" ", command));
+
+        // Start jdtls process
+        ProcessBuilder processBuilder = new ProcessBuilder(command);
+        processBuilder.redirectError(ProcessBuilder.Redirect.INHERIT); // Show stderr for debugging
+        
+        try {
+            jdtlsProcess = processBuilder.start();
+        } catch (IOException e) {
+            logger.error("Failed to start jdtls. Make sure 'jdtls' is in your PATH or specify the full path.");
+            throw new IOException("Failed to start jdtls command: " + jdtlsCommand, e);
+        }
+
+        // Get stdin/stdout streams
+        InputStream input = jdtlsProcess.getInputStream();
+        OutputStream output = jdtlsProcess.getOutputStream();
 
         // Create language client
         languageClient = new LanguageClientImpl();
@@ -59,13 +103,34 @@ public class JdtLsClient {
         );
 
         languageServer = launcher.getRemoteProxy();
+        
+        // Start listening in a separate thread
         launcher.startListening();
+        
+        // Monitor process termination
+        CompletableFuture.runAsync(() -> {
+            try {
+                int exitCode = jdtlsProcess.waitFor();
+                if (exitCode != 0) {
+                    logger.error("JDT LS process exited with code: {}", exitCode);
+                }
+            } catch (InterruptedException e) {
+                logger.warn("JDT LS process monitoring interrupted", e);
+            }
+        });
 
-        logger.info("Connected to JDT LS, initializing...");
+        logger.info("JDT LS process started, initializing...");
 
         // Initialize the language server
         InitializeParams initParams = new InitializeParams();
         initParams.setProcessId((int) ProcessHandle.current().pid());
+        
+        // Set root URI to the workspace
+        initParams.setRootUri("file://" + workspace.toAbsolutePath().toString());
+        initParams.setWorkspaceFolders(List.of(
+            new WorkspaceFolder("file://" + workspace.toAbsolutePath().toString(), 
+                               workspace.getFileName().toString())
+        ));
 
         // Set capabilities
         ClientCapabilities capabilities = new ClientCapabilities();
@@ -82,13 +147,20 @@ public class JdtLsClient {
 
         // Send initialize request
         CompletableFuture<InitializeResult> initFuture = languageServer.initialize(initParams);
-        InitializeResult initResult = initFuture.get(30, TimeUnit.SECONDS);
+        InitializeResult initResult = initFuture.get(60, TimeUnit.SECONDS); // Increased timeout for first init
 
         logger.info("JDT LS initialized successfully");
+        logger.info("Server capabilities: workspace={}, textDocument={}", 
+                   initResult.getCapabilities().getWorkspaceSymbolProvider() != null,
+                   initResult.getCapabilities().getDocumentSymbolProvider() != null);
 
         // Send initialized notification
         languageServer.initialized(new InitializedParams());
         initialized = true;
+        
+        // Give jdtls some time to analyze the workspace
+        logger.info("Waiting for JDT LS to analyze workspace...");
+        Thread.sleep(5000); // Wait 5 seconds for initial analysis
     }
 
     /**
@@ -194,11 +266,17 @@ public class JdtLsClient {
             }
         }
 
-        if (socket != null) {
+        if (jdtlsProcess != null && jdtlsProcess.isAlive()) {
             try {
-                socket.close();
-            } catch (IOException e) {
-                logger.error("Error closing socket", e);
+                logger.info("Terminating JDT LS process");
+                jdtlsProcess.destroy();
+                if (!jdtlsProcess.waitFor(5, TimeUnit.SECONDS)) {
+                    logger.warn("JDT LS process did not terminate gracefully, forcing...");
+                    jdtlsProcess.destroyForcibly();
+                }
+            } catch (InterruptedException e) {
+                logger.error("Interrupted while waiting for JDT LS process to terminate", e);
+                jdtlsProcess.destroyForcibly();
             }
         }
 

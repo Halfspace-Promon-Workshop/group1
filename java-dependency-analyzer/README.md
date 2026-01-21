@@ -15,17 +15,19 @@ A tool for analyzing and visualizing Java class dependencies in an interactive 3
 ## Architecture
 
 ```
-┌─────────────────┐
-│   JDT LS        │ Language Server Protocol
-│  (Port 9999)    │◄─────────────────┐
-└─────────────────┘                  │
-                                     │
 ┌─────────────────────────────────────────┐
 │  Java Backend                           │
 │  ┌─────────────────────────────────┐   │
 │  │  LSP Client                      │   │
-│  │  ├─ Connect to JDT LS           │   │
+│  │  ├─ Launch JDT LS subprocess    │   │
+│  │  ├─ Communicate via stdin/stdout│   │
 │  │  └─ Query workspace symbols      │   │
+│  └─────────────────────────────────┘   │
+│          │ spawns                       │
+│          ▼                               │
+│  ┌─────────────────────────────────┐   │
+│  │  JDT LS Process                  │   │
+│  │  (Language Server Protocol)      │   │
 │  └─────────────────────────────────┘   │
 │  ┌─────────────────────────────────┐   │
 │  │  Graph Builder                   │   │
@@ -83,63 +85,64 @@ This will create `target/java-dependency-analyzer-1.0-SNAPSHOT-jar-with-dependen
 
 ## Usage
 
-### Step 1: Start JDT Language Server
+The analyzer automatically starts JDT Language Server as a subprocess and communicates via stdin/stdout. You don't need to start JDT LS manually.
 
-Before running the analyzer, you need to start JDT LS manually. The analyzer will connect to it via socket.
+### Step 1: Ensure jdtls is installed
 
-#### Finding JDT LS Installation
-
-If you have VS Code with Java extensions installed, JDT LS is typically located at:
-
-- **macOS/Linux**: `~/.vscode/extensions/redhat.java-*/server/`
-- **Windows**: `%USERPROFILE%\.vscode\extensions\redhat.java-*\server\`
-
-#### Starting JDT LS
-
-Navigate to your JDT LS installation directory and run:
+Make sure `jdtls` is available in your PATH:
 
 ```bash
-java -jar plugins/org.eclipse.equinox.launcher_*.jar \
-  -configuration config_linux \
-  -data /path/to/workspace \
-  -Dclient.socket.port=9999
+# Check if jdtls is installed
+which jdtls
 ```
 
-**Notes:**
-- Replace `/path/to/workspace` with the path to the Java project you want to analyze (e.g., `../nifi`)
-- Use `config_mac` on macOS, `config_win` on Windows, or `config_linux` on Linux
-- The default port is 9999, but you can change it in the configuration
+**Installation options:**
 
-Example for analyzing the NiFi project:
+- **Nix/NixOS**: 
+  ```bash
+  nix-env -iA nixpkgs.jdt-language-server
+  ```
 
-```bash
-cd ~/.vscode/extensions/redhat.java-*/server/
-java -jar plugins/org.eclipse.equinox.launcher_*.jar \
-  -configuration config_mac \
-  -data /Users/harrison/tmp/group1/nifi \
-  -Dclient.socket.port=9999
-```
+- **Nix flake**:
+  ```bash
+  nix profile install nixpkgs#jdt-language-server
+  ```
 
-Wait for JDT LS to initialize and analyze the workspace. You'll see output indicating the server is ready.
+- **VS Code Extension**: If you have VS Code with the Red Hat Java extension, jdtls is bundled. You can create a symlink or use the full path.
+
+- **Manual**: Download from https://download.eclipse.org/jdtls/snapshots/
 
 ### Step 2: Run the Analyzer
 
-In a new terminal, run the analyzer:
+Run the analyzer with the path to your Java workspace:
 
 ```bash
-java -jar target/java-dependency-analyzer-1.0-SNAPSHOT-jar-with-dependencies.jar
+java -jar target/java-dependency-analyzer-1.0-SNAPSHOT-jar-with-dependencies.jar <workspace-path> [jdtls-command] [server-port]
 ```
 
-Or specify custom connection parameters:
+**Examples:**
 
 ```bash
-java -jar target/java-dependency-analyzer-1.0-SNAPSHOT-jar-with-dependencies.jar <jdtls-host> <jdtls-port> <server-port>
+# Analyze the NiFi project in the parent directory
+java -jar target/java-dependency-analyzer-1.0-SNAPSHOT-jar-with-dependencies.jar ../nifi
+
+# Specify custom jdtls command and server port
+java -jar target/java-dependency-analyzer-1.0-SNAPSHOT-jar-with-dependencies.jar /path/to/project jdtls 8080
+
+# Use full path to jdtls if not in PATH
+java -jar target/java-dependency-analyzer-1.0-SNAPSHOT-jar-with-dependencies.jar . /usr/local/bin/jdtls 8080
 ```
 
-Example:
-```bash
-java -jar target/java-dependency-analyzer-1.0-SNAPSHOT-jar-with-dependencies.jar localhost 9999 8080
-```
+**Default values:**
+- Workspace path: `.` (current directory)
+- JDT LS command: `jdtls`
+- Server port: `8080`
+
+The analyzer will:
+1. Start JDT LS as a subprocess
+2. Wait for JDT LS to analyze the workspace (~5 seconds)
+3. Build the dependency graph
+4. Start the web server
 
 ### Step 3: View the Graph
 
@@ -157,8 +160,10 @@ You can modify the behavior by editing `src/main/resources/application.propertie
 
 ```properties
 # JDT Language Server Configuration
-jdtls.host=localhost
-jdtls.port=9999
+# Path to the Java workspace/project to analyze
+jdtls.workspace=.
+# Command to launch jdtls (must be in PATH or provide full path)
+jdtls.command=jdtls
 
 # Web Server Configuration
 server.port=8080
@@ -240,7 +245,7 @@ java-dependency-analyzer/
 
 ### 1. Connection to JDT LS
 
-The analyzer connects to JDT Language Server via a socket connection using the LSP4J library. JDT LS provides rich semantic information about Java code.
+The analyzer starts JDT Language Server as a subprocess and communicates via stdin/stdout using the LSP4J library. JDT LS provides rich semantic information about Java code.
 
 ### 2. Dependency Extraction
 
@@ -311,14 +316,15 @@ Edit `graph-visualizer.js` to modify:
 
 ## Troubleshooting
 
-### JDT LS Connection Failed
+### JDT LS Failed to Start
 
-**Problem**: "Failed to connect to JDT LS at localhost:9999"
+**Problem**: "Failed to start JDT LS for workspace"
 
 **Solutions**:
-- Ensure JDT LS is running before starting the analyzer
-- Check that the port matches (default: 9999)
-- Verify JDT LS is listening on the correct port (check JDT LS output)
+- Ensure `jdtls` is installed and in your PATH (run `which jdtls`)
+- Check that the workspace path exists and is a valid directory
+- Verify you have Java 21+ installed (run `java -version`)
+- If using a custom jdtls command, make sure the path is correct
 
 ### No Classes Found
 
