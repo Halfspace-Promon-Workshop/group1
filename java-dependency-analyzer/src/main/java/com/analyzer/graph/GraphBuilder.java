@@ -2,6 +2,7 @@ package com.analyzer.graph;
 
 import com.analyzer.lsp.JdtLsClient;
 import org.eclipse.lsp4j.*;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

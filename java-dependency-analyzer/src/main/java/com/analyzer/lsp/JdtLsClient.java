@@ -2,6 +2,7 @@ package com.analyzer.lsp;
 
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.launch.LSPLauncher;
 import org.eclipse.lsp4j.services.LanguageServer;
 import org.slf4j.Logger;
@@ -99,18 +100,18 @@ public class JdtLsClient {
         }
 
         WorkspaceSymbolParams params = new WorkspaceSymbolParams(query);
-        CompletableFuture<List<Either<SymbolInformation, WorkspaceSymbol>>> future =
+        CompletableFuture<Either<List<? extends SymbolInformation>, List<? extends WorkspaceSymbol>>> future =
                 languageServer.getWorkspaceService().symbol(params);
 
-        List<Either<SymbolInformation, WorkspaceSymbol>> symbols = future.get();
+        Either<List<? extends SymbolInformation>, List<? extends WorkspaceSymbol>> symbolsEither = future.get();
         List<SymbolInformation> result = new ArrayList<>();
 
-        for (Either<SymbolInformation, WorkspaceSymbol> either : symbols) {
-            if (either.isLeft()) {
-                result.add(either.getLeft());
-            } else {
-                // Convert WorkspaceSymbol to SymbolInformation
-                WorkspaceSymbol ws = either.getRight();
+        if (symbolsEither.isLeft()) {
+            // We got a list of SymbolInformation
+            result.addAll(symbolsEither.getLeft());
+        } else {
+            // We got a list of WorkspaceSymbol - convert each to SymbolInformation
+            for (WorkspaceSymbol ws : symbolsEither.getRight()) {
                 SymbolInformation si = new SymbolInformation();
                 si.setName(ws.getName());
                 si.setKind(ws.getKind());
