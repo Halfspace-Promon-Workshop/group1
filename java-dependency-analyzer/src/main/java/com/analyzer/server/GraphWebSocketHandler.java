@@ -42,8 +42,14 @@ public class GraphWebSocketHandler {
                 session.getRemoteAddress(), sessions.size());
 
         // Send current graph to newly connected client
+        // Always send, even if empty, so frontend knows connection is established
         if (currentGraph != null) {
             sendGraphToSession(session, currentGraph);
+        } else {
+            // Send empty graph so frontend can hide loading screen
+            logger.info("No graph data available yet, sending empty graph to client");
+            DependencyGraph emptyGraph = new DependencyGraph();
+            sendGraphToSession(session, emptyGraph);
         }
     }
 
@@ -56,8 +62,14 @@ public class GraphWebSocketHandler {
 
     @OnWebSocketError
     public void onError(Session session, Throwable error) {
-        logger.error("WebSocket error for client {}: {}",
-                session.getRemoteAddress(), error.getMessage());
+        if (error != null) {
+            logger.error("WebSocket error for client {}: {}",
+                    session != null ? session.getRemoteAddress() : "unknown", 
+                    error.getMessage(), error);
+        } else {
+            logger.error("WebSocket error for client {} - error is null",
+                    session != null ? session.getRemoteAddress() : "unknown");
+        }
     }
 
     @OnWebSocketMessage
@@ -74,13 +86,19 @@ public class GraphWebSocketHandler {
         if (session.isOpen()) {
             try {
                 String json = graph.toJson();
+                logger.info("Sending graph data to client: {} ({} nodes, {} edges, {} bytes)",
+                        session.getRemoteAddress(), graph.getNodeCount(), graph.getEdgeCount(), json.length());
                 session.getRemote().sendString(json);
-                logger.debug("Sent graph data to client: {} ({} nodes, {} edges)",
-                        session.getRemoteAddress(), graph.getNodeCount(), graph.getEdgeCount());
+                logger.info("Successfully sent graph data to client: {}", session.getRemoteAddress());
             } catch (IOException e) {
                 logger.error("Error sending graph to client {}: {}",
-                        session.getRemoteAddress(), e.getMessage());
+                        session.getRemoteAddress(), e.getMessage(), e);
+            } catch (Exception e) {
+                logger.error("Unexpected error sending graph to client {}: {}",
+                        session.getRemoteAddress(), e.getMessage(), e);
             }
+        } else {
+            logger.warn("Cannot send graph to client {} - session is not open", session.getRemoteAddress());
         }
     }
 
