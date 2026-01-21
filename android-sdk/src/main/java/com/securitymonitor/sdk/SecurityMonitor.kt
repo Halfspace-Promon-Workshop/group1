@@ -3,8 +3,6 @@ package com.securitymonitor.sdk
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
-import android.os.Build
-import android.telephony.TelephonyManager
 import kotlinx.coroutines.*
 import okhttp3.*
 import com.google.gson.Gson
@@ -297,28 +295,13 @@ object SecurityMonitor {
     
     /**
      * Get device ID
+     * Uses ANDROID_ID which is available to all apps without special permissions
      */
     private fun getDeviceId(context: Context): String {
-        return try {
-            val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                telephonyManager.imei ?: android.provider.Settings.Secure.getString(
-                    context.contentResolver,
-                    android.provider.Settings.Secure.ANDROID_ID
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                telephonyManager.deviceId ?: android.provider.Settings.Secure.getString(
-                    context.contentResolver,
-                    android.provider.Settings.Secure.ANDROID_ID
-                )
-            }
-        } catch (e: Exception) {
-            android.provider.Settings.Secure.getString(
-                context.contentResolver,
-                android.provider.Settings.Secure.ANDROID_ID
-            )
-        }
+        return android.provider.Settings.Secure.getString(
+            context.contentResolver,
+            android.provider.Settings.Secure.ANDROID_ID
+        ) ?: "unknown_device"
     }
     
     /**
