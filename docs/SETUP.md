@@ -54,6 +54,13 @@ The dashboard will be available at `http://localhost:3000`
    - For physical device: `http://YOUR_COMPUTER_IP:5000/api/events`
 5. Build and run the app
 
+**Note:** The Gradle wrapper (`gradlew`) is included. On first run, Gradle will automatically download the wrapper JAR if needed. You can also build from command line:
+```bash
+cd demo-app
+./gradlew build  # On Linux/Mac
+gradlew.bat build  # On Windows
+```
+
 ## Testing the Prototype
 
 1. Start the backend server

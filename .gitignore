@@ -31,6 +31,8 @@ local.properties
 build/
 .externalNativeBuild/
 .cxx/
+# Note: gradle-wrapper.jar should be committed, but gradle cache should not
+.gradle/caches/
 
 # IDE
 .vscode/
