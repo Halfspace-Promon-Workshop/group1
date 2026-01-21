@@ -34,17 +34,58 @@ document.addEventListener('DOMContentLoaded', () => {
  * Handle received graph data.
  */
 function handleGraphData(graphData) {
-    console.log('Processing graph data...');
+    console.log('Processing graph data...', graphData);
 
     // Hide loading screen
-    const loadingElement = document.getElementById('loading');
-    if (loadingElement) {
-        loadingElement.classList.add('hidden');
+    hideLoadingScreen();
+
+    // Check if graph is empty
+    if (!graphData.nodes || graphData.nodes.length === 0) {
+        console.warn('Received empty graph');
+        showEmptyGraphMessage();
+        return;
     }
 
     // Render the graph
     if (visualizer) {
         visualizer.renderGraph(graphData);
+    }
+}
+
+/**
+ * Show a message when the graph is empty.
+ */
+function showEmptyGraphMessage() {
+    const container = document.getElementById('canvas-container');
+    if (container) {
+        const message = document.createElement('div');
+        message.id = 'empty-graph-message';
+        message.style.cssText = `
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #aaaaff;
+            font-size: 18px;
+            z-index: 10;
+        `;
+        message.innerHTML = `
+            <h2>No Classes Found</h2>
+            <p>The workspace appears to be empty or the analysis found no Java classes.</p>
+            <p>Make sure you're analyzing a valid Java project.</p>
+        `;
+        container.appendChild(message);
+    }
+}
+
+/**
+ * Hide the loading screen.
+ */
+function hideLoadingScreen() {
+    const loadingElement = document.getElementById('loading');
+    if (loadingElement) {
+        loadingElement.classList.add('hidden');
     }
 }
 

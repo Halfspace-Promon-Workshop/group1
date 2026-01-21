@@ -16,16 +16,34 @@ class WebSocketClient {
      * Connect to the WebSocket server.
      */
     connect() {
-        console.log(`Connecting to WebSocket at ${this.url}`);
+        console.log(`Attempting to connect to WebSocket at ${this.url}`);
         this.isIntentionallyClosed = false;
 
         try {
             this.ws = new WebSocket(this.url);
+            console.log('WebSocket object created, waiting for connection...');
 
             this.ws.onopen = () => {
                 console.log('WebSocket connected');
                 this.reconnectAttempts = 0;
                 this.updateConnectionStatus(true);
+                
+                // Hide loading screen after a brief delay if no data received
+                // This handles the case where the server has no data to send
+                setTimeout(() => {
+                    const loadingElement = document.getElementById('loading');
+                    if (loadingElement && !loadingElement.classList.contains('hidden')) {
+                        console.log('No graph data received, but connection established. Hiding loading screen.');
+                        loadingElement.innerHTML = `
+                            <div class="spinner" style="border-top-color: #ffa500;"></div>
+                            <p style="color: #ffa500;">Connected, but no data available. The workspace may be empty or still analyzing.</p>
+                        `;
+                        // Hide after showing the message briefly
+                        setTimeout(() => {
+                            loadingElement.classList.add('hidden');
+                        }, 2000);
+                    }
+                }, 3000);
             };
 
             this.ws.onmessage = (event) => {
@@ -46,6 +64,8 @@ class WebSocketClient {
 
             this.ws.onerror = (error) => {
                 console.error('WebSocket error:', error);
+                console.error('Failed to connect to:', this.url);
+                this.showError(`Failed to connect to WebSocket at ${this.url}. Check that the server is running.`);
             };
 
             this.ws.onclose = (event) => {
