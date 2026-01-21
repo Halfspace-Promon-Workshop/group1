@@ -28,7 +28,7 @@ class MainActivity : AppCompatActivity() {
         // Initialize SDK
         SecurityMonitor.initialize(
             context = this,
-            apiEndpoint = "http://10.0.2.2:5000/api/events", // Android emulator localhost
+            apiEndpoint = "http://localhost:5000/api/events", // Android emulator localhost
             enableLocalOnly = false
         )
         
