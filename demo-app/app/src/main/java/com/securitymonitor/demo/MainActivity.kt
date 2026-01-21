@@ -28,7 +28,11 @@ class MainActivity : AppCompatActivity() {
         // Initialize SDK
         SecurityMonitor.initialize(
             context = this,
-            apiEndpoint = "http://localhost:5000/api/events", // Android emulator localhost
+            // For emulator: use "http://10.0.2.2:5000/api/events"
+            // For physical device with adb reverse: use "http://localhost:5000/api/events" 
+            //   (run: adb reverse tcp:5000 tcp:5000)
+            // For physical device via network: use "http://YOUR_COMPUTER_IP:5000/api/events"
+            apiEndpoint = "http://localhost:5000/api/events",
             enableLocalOnly = false
         )
         
