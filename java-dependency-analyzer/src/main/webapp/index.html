@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Java Dependency Graph Analyzer</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>Java Dependency Graph Analyzer</h1>
+            <div id="stats">
+                <span id="node-count">Nodes: 0</span>
+                <span id="edge-count">Edges: 0</span>
+                <span id="connection-status" class="disconnected">Disconnected</span>
+            </div>
+        </header>
+
+        <div id="controls">
+            <div class="control-group">
+                <h3>View Controls</h3>
+                <button id="reset-camera">Reset Camera</button>
+                <button id="toggle-labels">Toggle Labels</button>
+            </div>
+            <div class="control-group">
+                <h3>Info</h3>
+                <div id="hover-info">Hover over a node to see details</div>
+                <div id="selected-info"></div>
+            </div>
+        </div>
+
+        <div id="canvas-container">
+            <canvas id="graph-canvas"></canvas>
+        </div>
+
+        <div id="loading">
+            <div class="spinner"></div>
+            <p>Connecting to server...</p>
+        </div>
+    </div>
+
+    <!-- Three.js library -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+
+    <!-- Application scripts -->
+    <script src="js/websocket-client.js"></script>
+    <script src="js/graph-visualizer.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
