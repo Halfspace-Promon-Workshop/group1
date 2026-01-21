@@ -38,7 +38,8 @@ public class GraphBuilder {
         logger.info("Starting dependency graph analysis");
 
         // Get all workspace symbols
-        List<SymbolInformation> symbols = lsClient.getWorkspaceSymbols("");
+        // Note: JDT LS requires "*" (wildcard) query to return all symbols
+        List<SymbolInformation> symbols = lsClient.getWorkspaceSymbols("*");
         logger.info("Found {} symbols in workspace", symbols.size());
 
         // Filter to only classes and interfaces

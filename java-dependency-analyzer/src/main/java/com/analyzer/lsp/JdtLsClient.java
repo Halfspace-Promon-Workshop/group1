@@ -39,6 +39,7 @@ public class JdtLsClient {
     private LanguageServer languageServer;
     private LanguageClientImpl languageClient;
     private boolean initialized = false;
+    private volatile boolean shuttingDown = false;
 
     /**
      * Create a new JDT LS client.
@@ -76,12 +77,18 @@ public class JdtLsClient {
         }
 
         // Build jdtls command
+        // The -data parameter should point to a workspace metadata directory,
+        // not the project directory itself (similar to Eclipse workspace concept)
+        Path dataDir = Paths.get(System.getProperty("java.io.tmpdir"), "jdtls-workspace-" + workspace.getFileName());
+        
         List<String> command = new ArrayList<>();
         command.add(jdtlsCommand);
         command.add("-data");
-        command.add(workspacePath);
+        command.add(dataDir.toString());
 
         logger.info("Launching JDT LS: {}", String.join(" ", command));
+        logger.info("Workspace data directory: {}", dataDir);
+        logger.info("Project to analyze: {}", workspace.toAbsolutePath());
 
         // Start jdtls process
         ProcessBuilder processBuilder = new ProcessBuilder(command);
@@ -303,6 +310,8 @@ public class JdtLsClient {
      * Disconnect from the language server.
      */
     public void disconnect() {
+        shuttingDown = true;
+        
         if (languageServer != null) {
             try {
                 logger.info("Shutting down JDT LS connection");
