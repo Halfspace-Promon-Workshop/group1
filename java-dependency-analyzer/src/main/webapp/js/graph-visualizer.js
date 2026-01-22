@@ -1,548 +1,480 @@
 /**
- * 3D Graph visualization using Three.js
- * Simplified and robust implementation
+ * 2D Graph visualization using HTML5 Canvas
+ * Simple force-directed layout
  */
 class GraphVisualizer {
     constructor(containerId) {
         console.log('=== GraphVisualizer Constructor ===');
         this.containerId = containerId;
         this.container = document.getElementById(containerId);
-        this.scene = null;
-        this.camera = null;
-        this.renderer = null;
-        this.controls = null;
-        this.nodes = new Map();
+        this.canvas = null;
+        this.ctx = null;
+        this.nodes = [];
         this.edges = [];
-        this.graphData = null;
-        this.raycaster = new THREE.Raycaster();
-        this.mouse = new THREE.Vector2();
-        this.selectedNode = null;
-        this.hoveredNode = null;
+        this.nodeMap = new Map();
         this.showLabels = true;
-        this.isInitialized = false;
-
+        
+        // Interaction state
+        this.draggedNode = null;
+        this.hoveredNode = null;
+        this.offsetX = 0;
+        this.offsetY = 0;
+        this.scale = 1;
+        this.isPanning = false;
+        this.lastMouseX = 0;
+        this.lastMouseY = 0;
+        
         this.init();
     }
 
-    /**
-     * Initialize the Three.js scene.
-     */
     init() {
-        console.log('Initializing Three.js...');
+        console.log('Initializing 2D Canvas Graph...');
         
-        try {
-            // Verify Three.js is loaded
-            if (typeof THREE === 'undefined') {
-                throw new Error('THREE.js is not loaded');
-            }
-            console.log('THREE.js version:', THREE.REVISION);
-
-            // Verify container
-            if (!this.container) {
-                throw new Error('Container not found: ' + this.containerId);
-            }
-
-            // Get container size
-            let width = this.container.clientWidth || window.innerWidth;
-            let height = this.container.clientHeight || window.innerHeight - 100;
-            if (height < 400) height = 400;
-            console.log('Container size:', width, 'x', height);
-
-            // Create scene
-            this.scene = new THREE.Scene();
-            this.scene.background = new THREE.Color(0x1a1a2e);
-
-            // Create camera
-            this.camera = new THREE.PerspectiveCamera(60, width / height, 1, 10000);
-            this.camera.position.set(0, 0, 800);
-
-            // Get or create canvas
-            let canvas = document.getElementById('graph-canvas');
-            if (!canvas) {
-                canvas = document.createElement('canvas');
-                canvas.id = 'graph-canvas';
-                this.container.appendChild(canvas);
-            }
-
-            // Create renderer
-            this.renderer = new THREE.WebGLRenderer({
-                canvas: canvas,
-                antialias: true,
-                alpha: false
-            });
-            this.renderer.setSize(width, height);
-            this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            console.log('Renderer created');
-
-            // Create orbit controls - try multiple ways to access OrbitControls
-            let OrbitControlsClass = null;
-            
-            // Try THREE.OrbitControls first
-            if (typeof THREE !== 'undefined' && typeof THREE.OrbitControls !== 'undefined') {
-                OrbitControlsClass = THREE.OrbitControls;
-            }
-            // Try global OrbitControls
-            else if (typeof OrbitControls !== 'undefined') {
-                OrbitControlsClass = OrbitControls;
-                // Attach to THREE namespace for consistency
-                if (typeof THREE !== 'undefined') {
-                    THREE.OrbitControls = OrbitControls;
-                }
-            }
-            // Try accessing from THREE namespace if it was loaded differently
-            else if (typeof THREE !== 'undefined' && THREE.controls && THREE.controls.OrbitControls) {
-                OrbitControlsClass = THREE.controls.OrbitControls;
-            }
-            
-            if (OrbitControlsClass) {
-                this.controls = new OrbitControlsClass(this.camera, this.renderer.domElement);
-                this.controls.enableDamping = true;
-                this.controls.dampingFactor = 0.1;
-                console.log('OrbitControls created successfully');
-            } else {
-                console.error('OrbitControls not available. THREE:', typeof THREE, 'OrbitControls:', typeof OrbitControls);
-                console.error('Camera controls will not work. Please check that OrbitControls script is loaded.');
-            }
-
-            // Add lights
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-            this.scene.add(ambientLight);
-
-            const light1 = new THREE.DirectionalLight(0xffffff, 0.8);
-            light1.position.set(100, 100, 100);
-            this.scene.add(light1);
-
-            const light2 = new THREE.DirectionalLight(0xffffff, 0.3);
-            light2.position.set(-100, -100, -100);
-            this.scene.add(light2);
-
-            // Add event listeners
-            window.addEventListener('resize', () => this.onWindowResize());
-            this.renderer.domElement.addEventListener('mousemove', (e) => this.onMouseMove(e));
-            this.renderer.domElement.addEventListener('click', (e) => this.onMouseClick(e));
-
-            // Start animation
-            this.isInitialized = true;
-            this.animate();
-
-            // Test render
-            this.renderer.render(this.scene, this.camera);
-            console.log('GraphVisualizer initialized successfully');
-
-        } catch (error) {
-            console.error('Error initializing GraphVisualizer:', error);
-            this.showError(error.message);
+        if (!this.container) {
+            console.error('Container not found:', this.containerId);
+            return;
         }
+
+        // Create canvas
+        this.canvas = document.getElementById('graph-canvas');
+        if (!this.canvas) {
+            this.canvas = document.createElement('canvas');
+            this.canvas.id = 'graph-canvas';
+            this.container.appendChild(this.canvas);
+        }
+        
+        this.ctx = this.canvas.getContext('2d');
+        this.resizeCanvas();
+        
+        // Event listeners
+        window.addEventListener('resize', () => this.resizeCanvas());
+        this.canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
+        this.canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
+        this.canvas.addEventListener('mouseup', (e) => this.onMouseUp(e));
+        this.canvas.addEventListener('wheel', (e) => this.onWheel(e));
+        this.canvas.addEventListener('dblclick', (e) => this.onDoubleClick(e));
+        
+        // Start render loop
+        this.animate();
+        
+        console.log('2D Graph Visualizer initialized');
     }
 
-    /**
-     * Show error message
-     */
-    showError(message) {
-        if (this.container) {
-            const div = document.createElement('div');
-            div.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#ff6b6b;text-align:center;background:rgba(0,0,0,0.8);padding:20px;border-radius:10px;';
-            div.innerHTML = '<h3>Visualization Error</h3><p>' + message + '</p>';
-            this.container.appendChild(div);
-        }
+    resizeCanvas() {
+        const rect = this.container.getBoundingClientRect();
+        this.canvas.width = rect.width || window.innerWidth;
+        this.canvas.height = rect.height || window.innerHeight - 80;
+        console.log('Canvas resized:', this.canvas.width, 'x', this.canvas.height);
     }
 
-    /**
-     * Render the graph data.
-     */
     renderGraph(graphData) {
         console.log('=== renderGraph called ===');
-        console.log('Graph data:', graphData);
-        console.log('Nodes count:', graphData?.nodes?.length);
-        console.log('Edges count:', graphData?.edges?.length);
+        console.log('Nodes:', graphData?.nodes?.length || 0);
+        console.log('Edges:', graphData?.edges?.length || 0);
 
-        if (!this.isInitialized || !this.scene) {
-            console.error('GraphVisualizer not initialized');
+        if (!graphData || !graphData.nodes) {
+            console.warn('No graph data');
             return;
         }
 
-        this.graphData = graphData;
-        this.clearGraph();
+        this.nodes = [];
+        this.edges = [];
+        this.nodeMap.clear();
 
-        if (!graphData || !graphData.nodes || graphData.nodes.length === 0) {
-            console.warn('No nodes to render');
-            return;
-        }
+        // Create nodes with initial positions
+        const centerX = this.canvas.width / 2;
+        const centerY = this.canvas.height / 2;
+        const radius = Math.min(centerX, centerY) * 0.7;
 
-        // Create nodes
-        console.log('Creating nodes...');
-        this.createNodes(graphData.nodes);
-        console.log('Nodes created:', this.nodes.size);
-
-        // Create edges
-        if (graphData.edges && graphData.edges.length > 0) {
-            console.log('Creating edges...');
-            this.createEdges(graphData.edges);
-            console.log('Edges created:', this.edges.length);
-        } else {
-            console.warn('No edges in graph data');
-        }
-
-        // Update stats
-        this.updateStats(this.nodes.size, this.edges.length);
-
-        // Center camera
-        this.centerCamera();
-
-        console.log('=== Graph rendering complete ===');
-    }
-
-    /**
-     * Create node spheres.
-     */
-    createNodes(nodes) {
-        const gridSize = Math.ceil(Math.sqrt(nodes.length));
-        const spacing = 80;
-
-        nodes.forEach((nodeData, index) => {
-            // Get or calculate position
-            let x = nodeData.x;
-            let y = nodeData.y;
-            let z = nodeData.z;
-
-            // If no valid position, arrange in grid
-            // Use strict equality to check for undefined/null, not falsy values (0 is valid)
-            if (x === undefined || x === null || y === undefined || y === null || z === undefined || z === null) {
-                const row = Math.floor(index / gridSize);
-                const col = index % gridSize;
-                x = (col - gridSize / 2) * spacing;
-                y = (row - gridSize / 2) * spacing;
-                z = (Math.random() - 0.5) * spacing;
-            }
-
-            // Node size based on dependencies
-            const size = 8 + Math.min((nodeData.dependencyCount || 0) * 2, 20);
-
-            // Node color based on dependencies
-            const color = this.getNodeColor(nodeData.dependencyCount || 0);
-
-            // Create sphere
-            const geometry = new THREE.SphereGeometry(size, 16, 16);
-            const material = new THREE.MeshPhongMaterial({
-                color: color,
-                emissive: color,
-                emissiveIntensity: 0.2,
-                shininess: 50
-            });
-
-            const sphere = new THREE.Mesh(geometry, material);
-            sphere.position.set(x, y, z);
-            sphere.userData = {
+        graphData.nodes.forEach((nodeData, index) => {
+            // Arrange in a circle initially
+            const angle = (2 * Math.PI * index) / graphData.nodes.length;
+            const node = {
                 id: nodeData.id,
-                name: nodeData.name || nodeData.id,
+                name: nodeData.name || nodeData.id.split('.').pop(),
                 fullName: nodeData.fullName || nodeData.id,
+                x: centerX + radius * Math.cos(angle),
+                y: centerY + radius * Math.sin(angle),
+                vx: 0,
+                vy: 0,
+                radius: 20 + Math.min((nodeData.dependencyCount || 0) * 3, 15),
+                color: this.getNodeColor(nodeData.dependencyCount || 0),
                 dependencyCount: nodeData.dependencyCount || 0
             };
-
-            this.scene.add(sphere);
-            this.nodes.set(nodeData.id, sphere);
-
-            // Create label
-            if (this.showLabels && index < 50) {
-                this.createLabel(nodeData.name || nodeData.id, sphere.position);
-            }
+            this.nodes.push(node);
+            this.nodeMap.set(nodeData.id, node);
         });
-    }
 
-    /**
-     * Create edges between nodes.
-     */
-    createEdges(edgesData) {
-        let created = 0;
-        let failed = 0;
-
-        edgesData.forEach((edge, i) => {
-            const sourceNode = this.nodes.get(edge.source);
-            const targetNode = this.nodes.get(edge.target);
-
-            if (!sourceNode) {
-                if (i < 5) console.warn('Edge source not found:', edge.source);
-                failed++;
-                return;
-            }
-            if (!targetNode) {
-                if (i < 5) console.warn('Edge target not found:', edge.target);
-                failed++;
-                return;
-            }
-
-            // Create line from source to target
-            const points = [
-                sourceNode.position.clone(),
-                targetNode.position.clone()
-            ];
-
-            const geometry = new THREE.BufferGeometry().setFromPoints(points);
-            const material = new THREE.LineBasicMaterial({
-                color: 0x4488ff,
-                transparent: true,
-                opacity: 0.6
+        // Create edges
+        if (graphData.edges) {
+            graphData.edges.forEach(edgeData => {
+                const source = this.nodeMap.get(edgeData.source);
+                const target = this.nodeMap.get(edgeData.target);
+                if (source && target) {
+                    this.edges.push({
+                        source: source,
+                        target: target,
+                        fieldName: edgeData.fieldName
+                    });
+                }
             });
-
-            const line = new THREE.Line(geometry, material);
-            line.userData = {
-                source: edge.source,
-                target: edge.target,
-                fieldName: edge.fieldName
-            };
-
-            this.scene.add(line);
-            this.edges.push(line);
-            created++;
-        });
-
-        console.log('Edges: created=' + created + ', failed=' + failed);
-        
-        // Debug: log node IDs if edges failed
-        if (failed > 0 && created === 0) {
-            console.log('Available node IDs (first 10):');
-            const ids = Array.from(this.nodes.keys()).slice(0, 10);
-            ids.forEach(id => console.log('  - ' + id));
-            
-            console.log('Edge source IDs (first 10):');
-            edgesData.slice(0, 10).forEach(e => console.log('  - ' + e.source));
         }
+
+        console.log('Created', this.nodes.length, 'nodes and', this.edges.length, 'edges');
+
+        // Update stats
+        this.updateStats(this.nodes.length, this.edges.length);
+
+        // Run force simulation
+        this.runForceSimulation();
     }
 
-    /**
-     * Create label for node
-     */
-    createLabel(text, position) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 256;
-        canvas.height = 64;
-        const ctx = canvas.getContext('2d');
-        
-        ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        ctx.fillRect(0, 0, 256, 64);
-        ctx.font = '18px Arial';
-        ctx.fillStyle = 'white';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        
-        // Truncate text if too long
-        let displayText = text;
-        if (text.length > 20) {
-            displayText = text.substring(0, 18) + '...';
-        }
-        ctx.fillText(displayText, 128, 32);
-
-        const texture = new THREE.CanvasTexture(canvas);
-        const material = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 0.8 });
-        const sprite = new THREE.Sprite(material);
-        sprite.position.set(position.x, position.y + 20, position.z);
-        sprite.scale.set(40, 10, 1);
-        this.scene.add(sprite);
-    }
-
-    /**
-     * Get color based on dependency count
-     */
     getNodeColor(count) {
-        if (count === 0) return 0x3366cc;
-        if (count < 3) return 0x44aa44;
-        if (count < 6) return 0xcccc44;
-        return 0xcc4444;
+        if (count === 0) return '#e74c3c';  // Red
+        if (count < 3) return '#9b59b6';    // Purple
+        if (count < 6) return '#f39c12';    // Orange
+        return '#27ae60';                    // Green
     }
 
-    /**
-     * Clear the graph
-     */
-    clearGraph() {
-        // Remove nodes
-        this.nodes.forEach(node => {
-            this.scene.remove(node);
-            if (node.geometry) node.geometry.dispose();
-            if (node.material) node.material.dispose();
-        });
-        this.nodes.clear();
+    runForceSimulation() {
+        const iterations = 100;
+        const repulsion = 5000;
+        const attraction = 0.01;
+        const damping = 0.9;
 
-        // Remove edges
-        this.edges.forEach(edge => {
-            this.scene.remove(edge);
-            if (edge.geometry) edge.geometry.dispose();
-            if (edge.material) edge.material.dispose();
-        });
-        this.edges = [];
+        for (let iter = 0; iter < iterations; iter++) {
+            // Repulsion between all nodes
+            for (let i = 0; i < this.nodes.length; i++) {
+                for (let j = i + 1; j < this.nodes.length; j++) {
+                    const nodeA = this.nodes[i];
+                    const nodeB = this.nodes[j];
+                    
+                    const dx = nodeB.x - nodeA.x;
+                    const dy = nodeB.y - nodeA.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                    
+                    const force = repulsion / (dist * dist);
+                    const fx = (dx / dist) * force;
+                    const fy = (dy / dist) * force;
+                    
+                    nodeA.vx -= fx;
+                    nodeA.vy -= fy;
+                    nodeB.vx += fx;
+                    nodeB.vy += fy;
+                }
+            }
 
-        // Remove sprites
-        const sprites = this.scene.children.filter(c => c instanceof THREE.Sprite);
-        sprites.forEach(sprite => {
-            this.scene.remove(sprite);
-            if (sprite.material && sprite.material.map) sprite.material.map.dispose();
-            if (sprite.material) sprite.material.dispose();
-        });
+            // Attraction along edges
+            for (const edge of this.edges) {
+                const dx = edge.target.x - edge.source.x;
+                const dy = edge.target.y - edge.source.y;
+                const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                
+                const force = dist * attraction;
+                const fx = (dx / dist) * force;
+                const fy = (dy / dist) * force;
+                
+                edge.source.vx += fx;
+                edge.source.vy += fy;
+                edge.target.vx -= fx;
+                edge.target.vy -= fy;
+            }
+
+            // Apply velocities and damping
+            for (const node of this.nodes) {
+                node.x += node.vx;
+                node.y += node.vy;
+                node.vx *= damping;
+                node.vy *= damping;
+                
+                // Keep nodes in bounds
+                const margin = 50;
+                node.x = Math.max(margin, Math.min(this.canvas.width - margin, node.x));
+                node.y = Math.max(margin, Math.min(this.canvas.height - margin, node.y));
+            }
+        }
     }
 
-    /**
-     * Center camera on graph
-     */
-    centerCamera() {
-        if (this.nodes.size === 0) return;
+    animate() {
+        this.draw();
+        requestAnimationFrame(() => this.animate());
+    }
 
-        const box = new THREE.Box3();
-        this.nodes.forEach(node => box.expandByObject(node));
+    draw() {
+        const ctx = this.ctx;
+        if (!ctx) return;
 
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z, 200);
+        // Clear canvas
+        ctx.fillStyle = '#0a0a1a';
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        const distance = maxDim * 1.5;
-        this.camera.position.set(center.x, center.y, center.z + distance);
-        
-        if (this.controls) {
-            this.controls.target.copy(center);
-            this.controls.update();
+        ctx.save();
+        ctx.translate(this.offsetX, this.offsetY);
+        ctx.scale(this.scale, this.scale);
+
+        // Draw edges first
+        for (const edge of this.edges) {
+            this.drawEdge(edge);
         }
 
-        console.log('Camera centered at distance:', distance);
+        // Draw nodes on top
+        for (const node of this.nodes) {
+            this.drawNode(node);
+        }
+
+        ctx.restore();
+
+        // Draw legend
+        this.drawLegend();
     }
 
-    /**
-     * Reset camera
-     */
+    drawEdge(edge) {
+        const ctx = this.ctx;
+        const source = edge.source;
+        const target = edge.target;
+
+        // Calculate direction
+        const dx = target.x - source.x;
+        const dy = target.y - source.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        // Start and end points (adjusted for node radius)
+        const startX = source.x + nx * source.radius;
+        const startY = source.y + ny * source.radius;
+        const endX = target.x - nx * target.radius;
+        const endY = target.y - ny * target.radius;
+
+        // Draw line
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
+        
+        const isHighlighted = this.hoveredNode && 
+            (edge.source === this.hoveredNode || edge.target === this.hoveredNode);
+        
+        ctx.strokeStyle = isHighlighted ? '#00ffff' : '#3498db';
+        ctx.lineWidth = isHighlighted ? 3 : 2;
+        ctx.stroke();
+
+        // Draw arrow
+        const arrowSize = 10;
+        const arrowAngle = Math.atan2(endY - startY, endX - startX);
+        
+        ctx.beginPath();
+        ctx.moveTo(endX, endY);
+        ctx.lineTo(
+            endX - arrowSize * Math.cos(arrowAngle - Math.PI / 6),
+            endY - arrowSize * Math.sin(arrowAngle - Math.PI / 6)
+        );
+        ctx.lineTo(
+            endX - arrowSize * Math.cos(arrowAngle + Math.PI / 6),
+            endY - arrowSize * Math.sin(arrowAngle + Math.PI / 6)
+        );
+        ctx.closePath();
+        ctx.fillStyle = isHighlighted ? '#00ffff' : '#3498db';
+        ctx.fill();
+    }
+
+    drawNode(node) {
+        const ctx = this.ctx;
+        const isHovered = node === this.hoveredNode;
+
+        // Draw glow for hovered node
+        if (isHovered) {
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, node.radius + 8, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(0, 255, 255, 0.3)';
+            ctx.fill();
+        }
+
+        // Draw node circle
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+        
+        // Gradient fill
+        const gradient = ctx.createRadialGradient(
+            node.x - node.radius/3, node.y - node.radius/3, 0,
+            node.x, node.y, node.radius
+        );
+        gradient.addColorStop(0, this.lightenColor(node.color, 40));
+        gradient.addColorStop(1, node.color);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+
+        // Border
+        ctx.strokeStyle = isHovered ? '#00ffff' : '#ffffff';
+        ctx.lineWidth = isHovered ? 3 : 2;
+        ctx.stroke();
+
+        // Draw label
+        if (this.showLabels || isHovered) {
+            ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            // Text background
+            const textWidth = ctx.measureText(node.name).width;
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(
+                node.x - textWidth/2 - 4,
+                node.y + node.radius + 8,
+                textWidth + 8,
+                16
+            );
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(node.name, node.x, node.y + node.radius + 16);
+        }
+    }
+
+    lightenColor(color, percent) {
+        const num = parseInt(color.replace('#', ''), 16);
+        const amt = Math.round(2.55 * percent);
+        const R = Math.min(255, (num >> 16) + amt);
+        const G = Math.min(255, ((num >> 8) & 0x00FF) + amt);
+        const B = Math.min(255, (num & 0x0000FF) + amt);
+        return '#' + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
+    }
+
+    drawLegend() {
+        const ctx = this.ctx;
+        const x = 20;
+        const y = this.canvas.height - 100;
+        
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(x - 10, y - 10, 180, 90);
+        
+        ctx.font = 'bold 12px Arial';
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'left';
+        ctx.fillText('Dependency Count:', x, y);
+        
+        const colors = [
+            { color: '#e74c3c', label: '0 deps' },
+            { color: '#9b59b6', label: '1-2 deps' },
+            { color: '#f39c12', label: '3-5 deps' },
+            { color: '#27ae60', label: '6+ deps' }
+        ];
+        
+        colors.forEach((item, i) => {
+            const cy = y + 20 + i * 16;
+            ctx.fillStyle = item.color;
+            ctx.beginPath();
+            ctx.arc(x + 8, cy, 6, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.fillStyle = '#cccccc';
+            ctx.font = '11px Arial';
+            ctx.fillText(item.label, x + 20, cy + 4);
+        });
+    }
+
+    // Mouse handlers
+    onMouseDown(e) {
+        const pos = this.getMousePos(e);
+        const node = this.getNodeAtPos(pos.x, pos.y);
+        
+        if (node) {
+            this.draggedNode = node;
+        } else {
+            this.isPanning = true;
+            this.lastMouseX = e.clientX;
+            this.lastMouseY = e.clientY;
+        }
+    }
+
+    onMouseMove(e) {
+        const pos = this.getMousePos(e);
+        
+        if (this.draggedNode) {
+            this.draggedNode.x = pos.x;
+            this.draggedNode.y = pos.y;
+        } else if (this.isPanning) {
+            this.offsetX += e.clientX - this.lastMouseX;
+            this.offsetY += e.clientY - this.lastMouseY;
+            this.lastMouseX = e.clientX;
+            this.lastMouseY = e.clientY;
+        } else {
+            const node = this.getNodeAtPos(pos.x, pos.y);
+            this.hoveredNode = node;
+            this.canvas.style.cursor = node ? 'pointer' : 'default';
+            
+            if (node) {
+                this.showHoverInfo(node);
+            } else {
+                this.clearHoverInfo();
+            }
+        }
+    }
+
+    onMouseUp(e) {
+        this.draggedNode = null;
+        this.isPanning = false;
+    }
+
+    onWheel(e) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        this.scale *= delta;
+        this.scale = Math.max(0.2, Math.min(3, this.scale));
+    }
+
+    onDoubleClick(e) {
+        // Reset view
+        this.resetCamera();
+    }
+
+    getMousePos(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        return {
+            x: (e.clientX - rect.left - this.offsetX) / this.scale,
+            y: (e.clientY - rect.top - this.offsetY) / this.scale
+        };
+    }
+
+    getNodeAtPos(x, y) {
+        for (let i = this.nodes.length - 1; i >= 0; i--) {
+            const node = this.nodes[i];
+            const dx = x - node.x;
+            const dy = y - node.y;
+            if (dx * dx + dy * dy <= node.radius * node.radius) {
+                return node;
+            }
+        }
+        return null;
+    }
+
     resetCamera() {
-        this.centerCamera();
+        this.offsetX = 0;
+        this.offsetY = 0;
+        this.scale = 1;
     }
 
-    /**
-     * Toggle labels
-     */
     toggleLabels() {
         this.showLabels = !this.showLabels;
-        if (this.graphData) {
-            this.renderGraph(this.graphData);
-        }
     }
 
-    /**
-     * Window resize handler
-     */
-    onWindowResize() {
-        if (!this.camera || !this.renderer || !this.container) return;
-        
-        const width = this.container.clientWidth || window.innerWidth;
-        const height = this.container.clientHeight || window.innerHeight - 100;
-        
-        this.camera.aspect = width / height;
-        this.camera.updateProjectionMatrix();
-        this.renderer.setSize(width, height);
-    }
-
-    /**
-     * Mouse move handler
-     */
-    onMouseMove(event) {
-        if (!this.renderer) return;
-        
-        const rect = this.renderer.domElement.getBoundingClientRect();
-        this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-        this.raycaster.setFromCamera(this.mouse, this.camera);
-        const intersects = this.raycaster.intersectObjects([...this.nodes.values()]);
-
-        if (intersects.length > 0) {
-            const node = intersects[0].object;
-            if (this.hoveredNode !== node) {
-                this.hoveredNode = node;
-                this.showHoverInfo(node.userData);
-                this.renderer.domElement.style.cursor = 'pointer';
-            }
-        } else {
-            if (this.hoveredNode) {
-                this.hoveredNode = null;
-                this.clearHoverInfo();
-                this.renderer.domElement.style.cursor = 'default';
-            }
-        }
-    }
-
-    /**
-     * Mouse click handler
-     */
-    onMouseClick(event) {
-        if (this.hoveredNode) {
-            this.selectNode(this.hoveredNode);
-        }
-    }
-
-    /**
-     * Select a node
-     */
-    selectNode(node) {
-        this.selectedNode = node;
-        this.showSelectedInfo(node.userData);
-
-        // Highlight connected edges
-        this.edges.forEach(edge => {
-            const connected = edge.userData.source === node.userData.id || 
-                              edge.userData.target === node.userData.id;
-            edge.material.opacity = connected ? 1.0 : 0.2;
-            edge.material.color.setHex(connected ? 0xffff00 : 0x4488ff);
-        });
-    }
-
-    /**
-     * Show hover info
-     */
-    showHoverInfo(data) {
+    showHoverInfo(node) {
         const el = document.getElementById('hover-info');
         if (el) {
-            el.innerHTML = '<strong>' + data.name + '</strong><br>' + 
-                           data.fullName + '<br>Dependencies: ' + data.dependencyCount;
+            el.innerHTML = '<strong>' + node.name + '</strong><br>' +
+                node.fullName + '<br>Dependencies: ' + node.dependencyCount;
         }
     }
 
-    /**
-     * Clear hover info
-     */
     clearHoverInfo() {
         const el = document.getElementById('hover-info');
         if (el) el.textContent = 'Hover over a node to see details';
     }
 
-    /**
-     * Show selected info
-     */
-    showSelectedInfo(data) {
-        const el = document.getElementById('selected-info');
-        if (el) {
-            el.innerHTML = '<strong>Selected:</strong> ' + data.name + '<br>' +
-                           '<strong>Full:</strong> ' + data.fullName + '<br>' +
-                           '<strong>Dependencies:</strong> ' + data.dependencyCount;
-        }
-    }
-
-    /**
-     * Update stats display
-     */
     updateStats(nodeCount, edgeCount) {
         const nodeEl = document.getElementById('node-count');
         const edgeEl = document.getElementById('edge-count');
         if (nodeEl) nodeEl.textContent = 'Nodes: ' + nodeCount;
         if (edgeEl) edgeEl.textContent = 'Edges: ' + edgeCount;
     }
-
-    /**
-     * Animation loop
-     */
-    animate() {
-        if (!this.isInitialized) return;
-        
-        requestAnimationFrame(() => this.animate());
-        
-        if (this.controls) this.controls.update();
-        if (this.renderer && this.scene && this.camera) {
-            this.renderer.render(this.scene, this.camera);
-        }
-    }
 }
 
-// Export for debugging
 window.GraphVisualizer = GraphVisualizer;
