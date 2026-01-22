@@ -50,16 +50,36 @@
 
     <!-- Three.js library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <!-- OrbitControls for Three.js -->
+    <!-- OrbitControls for Three.js r128 -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script>
-        // Ensure OrbitControls is attached to THREE namespace
-        if (typeof THREE !== 'undefined' && typeof OrbitControls !== 'undefined') {
-            THREE.OrbitControls = OrbitControls;
-            console.log('OrbitControls attached to THREE');
-        } else {
-            console.warn('OrbitControls setup - THREE:', typeof THREE, 'OrbitControls:', typeof OrbitControls);
-        }
+        // Ensure OrbitControls is properly attached to THREE namespace
+        // This runs after both scripts have loaded
+        (function() {
+            function setupOrbitControls() {
+                if (typeof THREE === 'undefined') {
+                    console.warn('THREE.js not loaded');
+                    return;
+                }
+                
+                // Check various ways OrbitControls might be available
+                if (typeof OrbitControls !== 'undefined') {
+                    THREE.OrbitControls = OrbitControls;
+                    console.log('OrbitControls attached to THREE namespace');
+                } else if (typeof THREE.OrbitControls !== 'undefined') {
+                    console.log('OrbitControls already on THREE namespace');
+                } else {
+                    console.error('OrbitControls setup failed - THREE:', typeof THREE, 'OrbitControls:', typeof OrbitControls);
+                    console.error('This may cause camera controls to not work');
+                }
+            }
+            
+            // Try multiple times to handle async loading
+            setupOrbitControls();
+            setTimeout(setupOrbitControls, 50);
+            setTimeout(setupOrbitControls, 200);
+            window.addEventListener('load', setupOrbitControls);
+        })();
     </script>
 
     <!-- Application scripts -->

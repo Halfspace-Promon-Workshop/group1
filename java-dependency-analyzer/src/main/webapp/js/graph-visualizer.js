@@ -74,18 +74,34 @@ class GraphVisualizer {
             this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             console.log('Renderer created');
 
-            // Create orbit controls
-            if (typeof THREE.OrbitControls === 'undefined' && typeof OrbitControls !== 'undefined') {
-                THREE.OrbitControls = OrbitControls;
+            // Create orbit controls - try multiple ways to access OrbitControls
+            let OrbitControlsClass = null;
+            
+            // Try THREE.OrbitControls first
+            if (typeof THREE !== 'undefined' && typeof THREE.OrbitControls !== 'undefined') {
+                OrbitControlsClass = THREE.OrbitControls;
+            }
+            // Try global OrbitControls
+            else if (typeof OrbitControls !== 'undefined') {
+                OrbitControlsClass = OrbitControls;
+                // Attach to THREE namespace for consistency
+                if (typeof THREE !== 'undefined') {
+                    THREE.OrbitControls = OrbitControls;
+                }
+            }
+            // Try accessing from THREE namespace if it was loaded differently
+            else if (typeof THREE !== 'undefined' && THREE.controls && THREE.controls.OrbitControls) {
+                OrbitControlsClass = THREE.controls.OrbitControls;
             }
             
-            if (THREE.OrbitControls) {
-                this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+            if (OrbitControlsClass) {
+                this.controls = new OrbitControlsClass(this.camera, this.renderer.domElement);
                 this.controls.enableDamping = true;
                 this.controls.dampingFactor = 0.1;
-                console.log('OrbitControls created');
+                console.log('OrbitControls created successfully');
             } else {
-                console.warn('OrbitControls not available');
+                console.error('OrbitControls not available. THREE:', typeof THREE, 'OrbitControls:', typeof OrbitControls);
+                console.error('Camera controls will not work. Please check that OrbitControls script is loaded.');
             }
 
             // Add lights
@@ -190,7 +206,8 @@ class GraphVisualizer {
             let z = nodeData.z;
 
             // If no valid position, arrange in grid
-            if (!x && !y && !z) {
+            // Use strict equality to check for undefined/null, not falsy values (0 is valid)
+            if (x === undefined || x === null || y === undefined || y === null || z === undefined || z === null) {
                 const row = Math.floor(index / gridSize);
                 const col = index % gridSize;
                 x = (col - gridSize / 2) * spacing;
