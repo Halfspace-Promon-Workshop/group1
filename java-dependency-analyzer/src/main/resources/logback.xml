@@ -6,11 +6,11 @@
         </encoder>
     </appender>
 
-    <logger name="com.analyzer" level="INFO"/>
+    <logger name="com.analyzer" level="DEBUG"/>
     <logger name="org.eclipse.jetty" level="INFO"/>
     <logger name="org.eclipse.lsp4j" level="INFO"/>
 
-    <root level="INFO">
+    <root level="DEBUG">
         <appender-ref ref="STDOUT"/>
     </root>
 </configuration>

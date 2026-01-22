@@ -4,6 +4,8 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -13,6 +15,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * Thread-safe for concurrent access.
  */
 public class DependencyGraph {
+    private static final Logger logger = LoggerFactory.getLogger(DependencyGraph.class);
+    
     private final Map<String, ClassNode> nodes;
     private final Set<DependencyEdge> edges;
     private final Gson gson;
@@ -102,6 +106,8 @@ public class DependencyGraph {
      * Convert the graph to JSON format for transmission to frontend.
      */
     public String toJson() {
+        logger.info("Serializing graph to JSON: {} nodes, {} edges", nodes.size(), edges.size());
+        
         JsonObject root = new JsonObject();
         root.addProperty("type", "graph");
 
@@ -124,12 +130,22 @@ public class DependencyGraph {
         JsonArray edgesArray = new JsonArray();
         for (DependencyEdge edge : edges) {
             JsonObject edgeObj = new JsonObject();
-            edgeObj.addProperty("source", edge.getSource().getFullyQualifiedName());
-            edgeObj.addProperty("target", edge.getTarget().getFullyQualifiedName());
+            String sourceId = edge.getSource().getFullyQualifiedName();
+            String targetId = edge.getTarget().getFullyQualifiedName();
+            edgeObj.addProperty("source", sourceId);
+            edgeObj.addProperty("target", targetId);
             edgeObj.addProperty("fieldName", edge.getFieldName());
             edgesArray.add(edgeObj);
+            
+            // Log first few edges for debugging
+            if (edgesArray.size() <= 5) {
+                logger.info("Edge {}: {} -> {} ({})", edgesArray.size(), sourceId, targetId, edge.getFieldName());
+            }
         }
         root.add("edges", edgesArray);
+        
+        logger.info("JSON serialization complete: {} nodes, {} edges in output", 
+                nodesArray.size(), edgesArray.size());
 
         return gson.toJson(root);
     }

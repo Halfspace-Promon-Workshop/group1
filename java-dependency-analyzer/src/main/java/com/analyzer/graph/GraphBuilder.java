@@ -119,17 +119,31 @@ public class GraphBuilder {
         // Check if this is a field (instance variable)
         if (symbol.getKind() == SymbolKind.Field) {
             String fieldName = symbol.getName();
-            String fieldType = extractTypeFromDetail(symbol.getDetail());
-
-            if (fieldType != null && !shouldExclude(fieldType)) {
+            String detail = symbol.getDetail();
+            
+            // Log field details for debugging
+            logger.info("Found field '{}' in class '{}', detail: '{}'", 
+                    fieldName, sourceNode.getName(), detail);
+            
+            String fieldType = extractTypeFromDetail(detail);
+            
+            if (fieldType == null) {
+                logger.debug("Could not extract type from detail '{}' for field '{}'", detail, fieldName);
+            } else if (shouldExclude(fieldType)) {
+                logger.debug("Excluding field '{}' of type '{}' (standard library)", fieldName, fieldType);
+            } else {
                 // Try to find the target node
                 ClassNode targetNode = findNodeByType(fieldType, nodeMap);
 
-                if (targetNode != null && !targetNode.equals(sourceNode)) {
+                if (targetNode == null) {
+                    logger.debug("Could not find node for type '{}' (field '{}')", fieldType, fieldName);
+                } else if (targetNode.equals(sourceNode)) {
+                    logger.debug("Skipping self-reference for field '{}'", fieldName);
+                } else {
                     // Create dependency edge
                     DependencyEdge edge = new DependencyEdge(sourceNode, targetNode, fieldName);
                     graph.addEdge(edge);
-                    logger.debug("Found dependency: {} -> {} (field: {})",
+                    logger.info("Created edge: {} -> {} (field: {})",
                             sourceNode.getName(), targetNode.getName(), fieldName);
                 }
             }
@@ -146,17 +160,42 @@ public class GraphBuilder {
     /**
      * Extract type information from symbol detail string.
      * The detail usually contains the type, e.g., "String name" or "List<Item> items"
+     * JDT LS may return different formats depending on version:
+     * - "Type" (just the type)
+     * - "Type fieldName" (type and field name)
+     * - ": Type" (with colon prefix)
      */
     private String extractTypeFromDetail(String detail) {
         if (detail == null || detail.isEmpty()) {
+            logger.debug("Detail is null or empty");
             return null;
+        }
+
+        String trimmed = detail.trim();
+        logger.debug("Extracting type from detail: '{}'", trimmed);
+        
+        // Handle ": Type" format (common in some JDT LS versions)
+        if (trimmed.startsWith(":")) {
+            trimmed = trimmed.substring(1).trim();
+        }
+        
+        // Handle "Type : defaultValue" format
+        int colonIndex = trimmed.indexOf(':');
+        if (colonIndex > 0) {
+            trimmed = trimmed.substring(0, colonIndex).trim();
         }
 
         // Try to extract type from detail string
         // Format is usually: "Type fieldName" or just "Type"
-        String[] parts = detail.trim().split("\\s+");
+        String[] parts = trimmed.split("\\s+");
         if (parts.length > 0) {
             String type = parts[0];
+            
+            // If type looks like a field name (lowercase), try the second part
+            if (parts.length > 1 && Character.isLowerCase(type.charAt(0)) && 
+                Character.isUpperCase(parts[1].charAt(0))) {
+                type = parts[1];
+            }
 
             // Remove generic parameters for simplicity
             int genericStart = type.indexOf('<');
@@ -166,10 +205,17 @@ public class GraphBuilder {
 
             // Remove array brackets
             type = type.replace("[]", "");
+            
+            // Remove any remaining special characters
+            type = type.replaceAll("[^a-zA-Z0-9_.]", "");
 
-            return type;
+            if (!type.isEmpty()) {
+                logger.debug("Extracted type: '{}'", type);
+                return type;
+            }
         }
 
+        logger.debug("Could not extract type from detail");
         return null;
     }
 

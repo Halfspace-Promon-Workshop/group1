@@ -22,12 +22,20 @@
                 <h3>View Controls</h3>
                 <button id="reset-camera">Reset Camera</button>
                 <button id="toggle-labels">Toggle Labels</button>
+                <button id="toggle-debug">Toggle Debug View</button>
             </div>
             <div class="control-group">
                 <h3>Info</h3>
                 <div id="hover-info">Hover over a node to see details</div>
                 <div id="selected-info"></div>
             </div>
+        </div>
+
+        <!-- Debug panel to show edges list -->
+        <div id="debug-panel" style="position:absolute;top:80px;right:20px;width:400px;max-height:70vh;overflow-y:auto;background:rgba(0,0,0,0.9);padding:15px;border-radius:10px;z-index:100;font-family:monospace;font-size:12px;">
+            <h3 style="color:#4488ff;margin-bottom:10px;">Edge List (Debug)</h3>
+            <div id="edge-count-debug" style="color:#88ff88;margin-bottom:10px;"></div>
+            <div id="edge-list" style="color:#fff;"></div>
         </div>
 
         <div id="canvas-container">
@@ -40,9 +48,19 @@
         </div>
     </div>
 
-    <!-- Three.js library (using older version with working OrbitControls) -->
+    <!-- Three.js library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- OrbitControls for Three.js -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script>
+        // Ensure OrbitControls is attached to THREE namespace
+        if (typeof THREE !== 'undefined' && typeof OrbitControls !== 'undefined') {
+            THREE.OrbitControls = OrbitControls;
+            console.log('OrbitControls attached to THREE');
+        } else {
+            console.warn('OrbitControls setup - THREE:', typeof THREE, 'OrbitControls:', typeof OrbitControls);
+        }
+    </script>
 
     <!-- Application scripts -->
     <script src="js/websocket-client.js"></script>
