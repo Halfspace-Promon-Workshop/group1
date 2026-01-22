@@ -78,16 +78,32 @@ public class ForceDirectedLayout implements LayoutAlgorithm {
      */
     private void initializePositions(Collection<ClassNode> nodes) {
         Random random = new Random(42); // Fixed seed for reproducibility
-        double spread = idealDistance * Math.sqrt(nodes.size());
+        int nodeCount = nodes.size();
+        
+        // Ensure minimum spread even for single node or small graphs
+        double minSpread = idealDistance * 2;
+        double spread = Math.max(minSpread, idealDistance * Math.sqrt(nodeCount));
 
+        int index = 0;
         for (ClassNode node : nodes) {
-            node.setX((random.nextDouble() - 0.5) * spread);
-            node.setY((random.nextDouble() - 0.5) * spread);
-            node.setZ((random.nextDouble() - 0.5) * spread);
+            // For single node, place it at origin
+            if (nodeCount == 1) {
+                node.setX(0);
+                node.setY(0);
+                node.setZ(0);
+            } else {
+                // Distribute nodes in a sphere or grid pattern
+                node.setX((random.nextDouble() - 0.5) * spread);
+                node.setY((random.nextDouble() - 0.5) * spread);
+                node.setZ((random.nextDouble() - 0.5) * spread);
+            }
             node.setVx(0);
             node.setVy(0);
             node.setVz(0);
+            index++;
         }
+        
+        logger.debug("Initialized {} node positions with spread {}", nodeCount, spread);
     }
 
     /**
