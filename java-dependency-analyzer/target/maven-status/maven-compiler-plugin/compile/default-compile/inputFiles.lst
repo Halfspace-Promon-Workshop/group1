@@ -1,0 +1,11 @@
+/Users/laura_szekeres/Promon/Assignment3/group1/java-dependency-analyzer/src/main/java/com/analyzer/graph/GraphBuilder.java
+/Users/laura_szekeres/Promon/Assignment3/group1/java-dependency-analyzer/src/main/java/com/analyzer/graph/DependencyEdge.java
+/Users/laura_szekeres/Promon/Assignment3/group1/java-dependency-analyzer/src/main/java/com/analyzer/server/JettyServer.java
+/Users/laura_szekeres/Promon/Assignment3/group1/java-dependency-analyzer/src/main/java/com/analyzer/lsp/LanguageClientImpl.java
+/Users/laura_szekeres/Promon/Assignment3/group1/java-dependency-analyzer/src/main/java/com/analyzer/server/GraphWebSocketHandler.java
+/Users/laura_szekeres/Promon/Assignment3/group1/java-dependency-analyzer/src/main/java/com/analyzer/graph/layout/LayoutAlgorithm.java
+/Users/laura_szekeres/Promon/Assignment3/group1/java-dependency-analyzer/src/main/java/com/analyzer/graph/ClassNode.java
+/Users/laura_szekeres/Promon/Assignment3/group1/java-dependency-analyzer/src/main/java/com/analyzer/lsp/JdtLsClient.java
+/Users/laura_szekeres/Promon/Assignment3/group1/java-dependency-analyzer/src/main/java/com/analyzer/Main.java
+/Users/laura_szekeres/Promon/Assignment3/group1/java-dependency-analyzer/src/main/java/com/analyzer/graph/layout/ForceDirectedLayout.java
+/Users/laura_szekeres/Promon/Assignment3/group1/java-dependency-analyzer/src/main/java/com/analyzer/graph/DependencyGraph.java
