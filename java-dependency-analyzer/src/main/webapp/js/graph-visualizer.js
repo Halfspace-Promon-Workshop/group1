@@ -82,12 +82,16 @@ class GraphVisualizer {
             return;
         }
 
+        console.log(`Rendering ${graphData.nodes.length} nodes, ${graphData.edges?.length || 0} edges`);
+
         // Create nodes
         this.createNodes(graphData.nodes);
 
-        // Create edges
-        if (graphData.edges) {
+        // Create edges (even if empty array, this is fine)
+        if (graphData.edges && graphData.edges.length > 0) {
             this.createEdges(graphData.edges);
+        } else {
+            console.log('No edges to render');
         }
 
         // Update stats
@@ -95,6 +99,8 @@ class GraphVisualizer {
 
         // Center camera on graph
         this.centerCamera();
+        
+        console.log('Graph rendering completed');
     }
 
     /**
@@ -120,14 +126,20 @@ class GraphVisualizer {
             });
 
             const sphere = new THREE.Mesh(geometry, material);
-            sphere.position.set(nodeData.x, nodeData.y, nodeData.z);
+            
+            // Ensure positions are numbers (handle undefined/null)
+            const x = typeof nodeData.x === 'number' ? nodeData.x : 0;
+            const y = typeof nodeData.y === 'number' ? nodeData.y : 0;
+            const z = typeof nodeData.z === 'number' ? nodeData.z : 0;
+            
+            sphere.position.set(x, y, z);
 
             // Store node data
             sphere.userData = {
                 id: nodeData.id,
                 name: nodeData.name,
                 fullName: nodeData.fullName,
-                dependencyCount: nodeData.dependencyCount
+                dependencyCount: nodeData.dependencyCount || 0
             };
 
             this.scene.add(sphere);
@@ -269,11 +281,20 @@ class GraphVisualizer {
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
         const maxDim = Math.max(size.x, size.y, size.z);
-        const fov = this.camera.fov * (Math.PI / 180);
-        const cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.5;
-
-        this.camera.position.set(center.x, center.y, center.z + cameraZ);
-        this.controls.target.copy(center);
+        
+        // If all nodes are at origin or very close, use a default view
+        if (maxDim < 1) {
+            // Calculate a reasonable distance based on number of nodes
+            const nodeCount = this.nodes.size;
+            const defaultDistance = Math.max(200, nodeCount * 20);
+            this.camera.position.set(0, 0, defaultDistance);
+            this.controls.target.set(0, 0, 0);
+        } else {
+            const fov = this.camera.fov * (Math.PI / 180);
+            const cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.5;
+            this.camera.position.set(center.x, center.y, center.z + cameraZ);
+            this.controls.target.copy(center);
+        }
         this.controls.update();
     }
 

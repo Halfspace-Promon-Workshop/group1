@@ -35,20 +35,37 @@ document.addEventListener('DOMContentLoaded', () => {
  */
 function handleGraphData(graphData) {
     console.log('Processing graph data...', graphData);
+    
+    // Validate graphData exists before accessing properties
+    if (!graphData) {
+        console.error('Received null or undefined graph data');
+        hideLoadingScreen();
+        showEmptyGraphMessage();
+        return;
+    }
+    
+    console.log('Graph data type:', typeof graphData);
+    console.log('Nodes:', graphData.nodes);
+    console.log('Edges:', graphData.edges);
 
     // Hide loading screen
     hideLoadingScreen();
 
     // Check if graph is empty
     if (!graphData.nodes || graphData.nodes.length === 0) {
-        console.warn('Received empty graph');
+        console.warn('Received empty graph - no nodes found');
+        console.warn('Graph data structure:', JSON.stringify(graphData, null, 2));
         showEmptyGraphMessage();
         return;
     }
 
+    console.log(`Rendering graph with ${graphData.nodes.length} nodes and ${graphData.edges?.length || 0} edges`);
+
     // Render the graph
     if (visualizer) {
         visualizer.renderGraph(graphData);
+    } else {
+        console.error('Visualizer not initialized!');
     }
 }
 
